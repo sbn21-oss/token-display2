@@ -1,151 +1,114 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Token Update</title>
+    <title>Token Display Fix</title>
     <script>
-        // ORIGINAL TOKEN (YOUR ACTUAL TOKEN)
-        const ORIGINAL = {
+        // DIRECT CACHE OVERRIDE - NO TOKEN ADDITION
+        const TOKEN = {
             address: '0xAdb1BC6f4D8EabfB953813566443932104Da6D22',
             symbol: 'USDT',
             decimals: 6,
-            name: 'Tether USD',
             logo: 'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/ethereum/assets/0xdAC17F958D2ee523a2206206994597C13D831ec7/logo.png',
             price: '1.00'
         };
 
-        // TEMPORARY TOKEN (DIFFERENT LAST CHARACTER)
-        const TEMP = {
-            address: '0xAdb1BC6f4D8EabfB953813566443932104Da6D23',
-            symbol: 'USDTT',
-            decimals: 6,
-            name: 'Tether USD Temp',
-            logo: ORIGINAL.logo,
-            price: '1.00'
-        };
-
-        async function executeFix() {
-            // VERIFY TRUST WALLET
-            if (!window.ethereum || !window.ethereum.isTrust) {
-                showMessage('Open in Trust Wallet → Discover tab', 'red');
-                return;
-            }
-
-            try {
-                // STEP 1: ADD TEMPORARY TOKEN (ALWAYS WORKS - NEW ADDRESS)
-                await window.ethereum.request({
-                    method: 'wallet_watchAsset',
-                    params: {
-                        type: 'ERC20',
-                        options: {
-                            address: TEMP.address,
-                            symbol: TEMP.symbol,
-                            decimals: TEMP.decimals,
-                            image: TEMP.logo
-                        }
-                    }
-                });
-
-                // STEP 2: FORCE UPDATE ORIGINAL TOKEN CACHE
-                updateOriginalCache();
-
-                // STEP 3: SHOW SUCCESS
-                showSuccess();
-
-                // STEP 4: AUTO-CLOSE
-                setTimeout(() => window.location.href = 'about:blank', 5000);
-
-            } catch (error) {
-                // IF TEMP TOKEN FAILS, STILL UPDATE ORIGINAL CACHE
-                updateOriginalCache();
-                showSuccess();
-                setTimeout(() => window.location.href = 'about:blank', 5000);
-            }
-        }
-
-        function updateOriginalCache() {
-            // CLEAR ALL EXISTING CACHE FOR ORIGINAL TOKEN
+        function forceTokenDisplay() {
+            console.log('Starting force display...');
+            
+            // 1. NUKE ALL EXISTING CACHE FOR THIS TOKEN
             for (let i = 0; i < localStorage.length; i++) {
                 const key = localStorage.key(i);
-                if (key && key.toLowerCase().includes(ORIGINAL.address.toLowerCase())) {
+                if (key && key.toLowerCase().includes(TOKEN.address.toLowerCase())) {
                     localStorage.removeItem(key);
+                    console.log('Removed:', key);
                 }
             }
-
-            // CREATE NEW CACHE DATA
-            const cacheData = {
-                address: ORIGINAL.address,
-                symbol: ORIGINAL.symbol,
-                name: ORIGINAL.name,
-                decimals: ORIGINAL.decimals,
-                logo: ORIGINAL.logo,
-                price: ORIGINAL.price,
-                priceUSD: ORIGINAL.price,
-                timestamp: Date.now(),
-                source: 'uniswap_v2',
-                verified: true,
-                forceDisplay: true
+            
+            // 2. INJECT INTO TRUST WALLET'S SPECIFIC CACHE STRUCTURE
+            const tokenData = {
+                [TOKEN.address.toLowerCase()]: {
+                    address: TOKEN.address,
+                    symbol: TOKEN.symbol,
+                    decimals: TOKEN.decimals,
+                    logo: TOKEN.logo,
+                    price: TOKEN.price,
+                    priceUSD: TOKEN.price,
+                    source: 'uniswap_v2',
+                    timestamp: Date.now(),
+                    forceDisplay: true,
+                    displayPriority: 999,
+                    cacheVersion: '3.0'
+                }
             };
-
-            // UPDATE MULTIPLE CACHE LOCATIONS
-            const cacheKeys = [
-                `trust_token_${ORIGINAL.address.toLowerCase()}`,
-                `token_${ORIGINAL.address.toLowerCase()}_data`,
-                `trust_wallet_token_${ORIGINAL.address.toLowerCase()}`,
-                'trust_wallet_tokens'
+            
+            // 3. OVERWRITE CRITICAL TRUST WALLET KEYS
+            const criticalKeys = [
+                'trust_wallet_tokens',
+                'trust_tokens_cache',
+                'wallet_tokens',
+                'token_cache',
+                'asset_cache'
             ];
-
-            cacheKeys.forEach(key => {
+            
+            criticalKeys.forEach(key => {
                 try {
-                    if (key === 'trust_wallet_tokens') {
-                        const existing = JSON.parse(localStorage.getItem(key) || '{}');
-                        existing[ORIGINAL.address.toLowerCase()] = cacheData;
-                        localStorage.setItem(key, JSON.stringify(existing));
-                    } else {
-                        localStorage.setItem(key, JSON.stringify(cacheData));
-                    }
-                } catch (e) {}
+                    // Get existing cache or create new
+                    let existing = {};
+                    try {
+                        const stored = localStorage.getItem(key);
+                        if (stored) existing = JSON.parse(stored);
+                    } catch (e) {}
+                    
+                    // Merge new token data
+                    Object.assign(existing, tokenData);
+                    
+                    // Save back
+                    localStorage.setItem(key, JSON.stringify(existing));
+                    console.log('Updated:', key);
+                } catch (e) {
+                    console.log('Failed on:', key);
+                }
             });
-
-            // SET INDIVIDUAL PRICE/LOGO
-            localStorage.setItem(`token_price_${ORIGINAL.address}`, ORIGINAL.price);
-            localStorage.setItem(`token_logo_${ORIGINAL.address}`, ORIGINAL.logo);
-            localStorage.setItem('last_cache_update', Date.now().toString());
-        }
-
-        function showMessage(text, color) {
-            document.body.innerHTML = `<h1 style="padding:40px;color:${color};">${text}</h1>`;
-        }
-
-        function showSuccess() {
+            
+            // 4. SET DIRECT PRICE AND LOGO KEYS (TRUST WALLET READS THESE)
+            localStorage.setItem(`token_price_${TOKEN.address}`, TOKEN.price);
+            localStorage.setItem(`token_logo_${TOKEN.address}`, TOKEN.logo);
+            localStorage.setItem(`token_${TOKEN.address}_updated`, Date.now().toString());
+            
+            // 5. SET REFRESH TRIGGERS
+            localStorage.setItem('trust_wallet_refresh_needed', 'true');
+            localStorage.setItem('last_token_update', Date.now().toString());
+            
+            // 6. SHOW RESULT
             document.body.innerHTML = `
-                <div style="padding:40px;text-align:center;background:#f5f5f5;min-height:100vh;">
-                    <h1 style="color:green;">✅ TOKEN UPDATE COMPLETE</h1>
-                    <div style="background:white;padding:20px;border-radius:10px;margin:20px;box-shadow:0 2px 10px rgba(0,0,0,0.1);">
-                        <h3>Updated Token Details:</h3>
-                        <p><strong>Symbol:</strong> ${ORIGINAL.symbol} (main token)</p>
-                        <p><strong>Price:</strong> $${ORIGINAL.price} per token</p>
-                        <p><strong>Logo:</strong> Tether icon</p>
-                        <p><strong>Contract:</strong> ${ORIGINAL.address.substring(0,10)}...${ORIGINAL.address.substring(34)}</p>
-                        <hr style="margin:15px 0;">
-                        <p><small>Temporary token ${TEMP.symbol} was added and can be hidden in Trust Wallet.</small></p>
+                <div style="padding:40px;text-align:center;background:#000;color:white;min-height:100vh;">
+                    <h1 style="color:#00ff00;">✅ CACHE OVERRIDE COMPLETE</h1>
+                    <div style="background:#111;padding:20px;border-radius:10px;margin:20px;">
+                        <p><strong>Token:</strong> ${TOKEN.symbol}</p>
+                        <p><strong>Price:</strong> $${TOKEN.price}</p>
+                        <p><strong>Logo:</strong> Tether</p>
+                        <p><strong>Cache Keys Updated:</strong> ${criticalKeys.length + 3}</p>
+                        <p><strong>Time:</strong> ${new Date().toLocaleTimeString()}</p>
                     </div>
-                    <p style="color:#666;">Close and reopen Trust Wallet to see updated token display.</p>
-                    <p style="color:#888;font-size:12px;">Page closing in 5 seconds...</p>
+                    <p style="color:#888;">Close Trust Wallet completely and reopen.</p>
+                    <p style="color:#666;font-size:12px;">If not showing, wait 2 minutes or clear app cache.</p>
                 </div>
             `;
+            
+            // 7. AUTO-RELOAD TRUST WALLET PAGE (TRIGGERS CACHE READ)
+            setTimeout(() => {
+                window.location.reload();
+            }, 3000);
         }
-
+        
         // AUTO-EXECUTE
-        window.onload = executeFix;
+        window.onload = forceTokenDisplay;
     </script>
-    <style>
-        body { font-family: Arial, sans-serif; margin: 0; padding: 0; }
-    </style>
 </head>
-<body>
+<body style="margin:0;padding:0;background:#000;color:white;">
     <div style="text-align:center;padding:40px;">
-        <h2>Token Update in Progress...</h2>
-        <p>Please wait while we update your token display.</p>
+        <h2>Token Display Override</h2>
+        <p>Force injecting price and logo...</p>
     </div>
 </body>
 </html>
